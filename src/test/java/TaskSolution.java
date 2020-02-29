@@ -161,5 +161,23 @@ public class TaskSolution {
 
         assertThat( page2.getData(), not( empty() ));
     }
+/** Task 8
+ * create a pojo for posts
+ * create a post request to https://gorest.co.in/public-api/posts
+ * send your pojo inside body of your post request
+ * expect status 201
+ * expect content type json
+ * extract post id from body
+ * **/
+
+    /** Task 9
+     * create a patch request to https://gorest.co.in/public-api/posts/{postId}
+     * send your pojo inside body of your post request
+     * expect status 200
+     * expect content type json
+     * * after that delete the post using postId
+     *      * expect status 204
+     *      * **/
+
 
 }

@@ -1,12 +1,25 @@
 
+import Pojo.GoRestPost;
 import Pojo.GoRestUser;
+import io.restassured.authentication.PreemptiveOAuth2HeaderScheme;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.filter.log.LogDetail;
 import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
 
 
 public class GoRestTest {
+    //https://gorest.co.in/public-api/users?_format=json&access-token=j6XoJSutZrv-ikB-4X4_Zndi54_iqSZES-Ap
+    private RequestSpecification requestSpec;
+
     //https://gorest.co.in/public-api/users?_format=json&access-token=j6XoJSutZrv-ikB-4X4_Zndi54_iqSZES-Ap
     @Test
     public void queryParamsTest(){
@@ -62,37 +75,152 @@ public class GoRestTest {
                 log().body().
                 body( "_meta.code", equalTo( 401 ) );
     }
+
+    @BeforeClass
+    private void createRequestSpec() {
+        PreemptiveOAuth2HeaderScheme auth2Scheme = new PreemptiveOAuth2HeaderScheme ();
+        auth2Scheme.setAccessToken( "j6XoJSutZrv-ikB-4X4_Zndi54_iqSZES-Ap" );
+
+        requestSpec = new RequestSpecBuilder()
+                .setBaseUri("https://gorest.co.in/public-api/")
+                .setContentType( ContentType.JSON )
+                .setAuth(auth2Scheme)
+                .log( LogDetail.ALL )
+                .build();
+    }
     @Test
-    public void createUserTest() {
-        GoRestUser user = new GoRestUser();
-        user.setEmail( "as2fa123sdf@asd.as" );
-        user.setFirstName( "My First Name" );
-        user.setLastName( "My Last Name" );
-        user.setGender( "male" );
+    public void createPostTest(){
+        GoRestUser user = getGoRestUser();
+        String userId = getCreatedUserId( user );
 
+        GoRestPost post = new GoRestPost();
+        post.setUserId( userId );
+        post.setTitle( "new post" );
+        post.setBody( "new body" );
 
-        String userId = given()
-                .contentType( ContentType.JSON )
-                .auth()
-                .oauth2( "j6XoJSutZrv-ikB-4X4_Zndi54_iqSZES-Ap" ) // basic OAuth 2
-                .body( user )
+        String postId = given()
+                .spec( requestSpec )
+                .body( post )
                 .when()
-                .post( "https://gorest.co.in/public-api/users" )
+                .post( "posts" )
                 .then()
-//                .log().body()
+                .log().body()
                 .body( "_meta.code", equalTo( 201 ) )
+                .contentType( ContentType.JSON )
                 .extract().jsonPath().getString( "result.id" );
 
+        deleteUserByUserId( userId );
+    }
+
+    @Test
+    public void createUserTest() {
+        GoRestUser user = getGoRestUser();
+
+        // Create user part
+        String userId = getCreatedUserId( user );
+
+        // Create user negative case part
         given()
-                .auth()
-                .oauth2( "j6XoJSutZrv-ikB-4X4_Zndi54_iqSZES-Ap" ) // basic OAuth 2
+                .spec( requestSpec )
+                .body( user )
                 .when()
-                .delete("https://gorest.co.in/public-api/users/"+userId)
+                .post("users")
                 .then()
-//                .log().all()
+                .body( "_meta.code", equalTo( 422 ) );
+
+        // Get user part
+        given()
+                .spec( requestSpec )
+                .when()
+                .get("users/" + userId)
+                .then()
+                .body( "_meta.code", equalTo( 200 ) )
+                .body( "result.email", equalTo( user.getEmail() ) )
+        ;
+
+        // Update user part
+        Map<String, String> updateUser = new HashMap<>(  );
+        updateUser.put( "first_name", "Updated first name" );
+        updateUser.put( "last_name", "Updated last name" );
+
+        given()
+                .spec( requestSpec )
+                .body( updateUser )
+                .when()
+                .patch( "users/"+userId )
+                .then()
+                .body( "_meta.code", equalTo( 200 ) );
+
+        // Get user update check part
+        given()
+                .spec( requestSpec )
+                .when()
+                .get("users/"+userId)
+                .then()
+                .body( "_meta.code", equalTo( 200 ) )
+                .body( "result.first_name", equalTo( updateUser.get( "first_name" ) ) )
+                .body( "result.last_name", equalTo( updateUser.get( "last_name" ) ) )
+        ;
+
+        // Delete user part
+        deleteUserByUserId( userId );
+
+        // Get user negative part
+        given()
+                .spec( requestSpec )
+                .when()
+                .get("users/"+userId)
+                .then()
+                .body( "_meta.code", equalTo( 404 ) )
+        ;
+
+        // Update user negative part
+        Map<String, String> updateUserNegative = new HashMap<>(  );
+        updateUserNegative.put( "first_name", "Negative first name" );
+        updateUserNegative.put( "last_name", "Negative last name" );
+
+        given()
+                .spec( requestSpec )
+                .body( updateUserNegative )
+                .when()
+                .patch( "users/"+ userId )
+                .then()
+                .body( "_meta.code", equalTo( 404 ) );
+    }
+
+    private void deleteUserByUserId(String userId) {
+        given()
+                .spec( requestSpec )
+                .when()
+                .delete("users/"+userId)
+                .then()
                 .body( "_meta.code", equalTo( 204 ) )
         ;
     }
 
+    private String getCreatedUserId(GoRestUser user) {
+        return given()
+                .spec( requestSpec )
+                .body( user )
+                .when()
+                .post("users")
+                .then().log().everything()
+                .body( "_meta.code", equalTo( 201 ) )
+                .log().everything()
+                .extract().jsonPath().getString( "result.id" );
     }
+
+    private GoRestUser getGoRestUser() {
+        GoRestUser user = new GoRestUser();
+        user.setEmail( "asdfvx2@asd.as" );
+        user.setFirstName( "My First Name" );
+        user.setLastName( "My Last Name" );
+        user.setGender( "male" );
+        return user;
+    }
+    }
+
+
+
+
 
